@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type User struct {
 	Id          string  `db:"id"`
@@ -11,11 +14,10 @@ type User struct {
 	Balance     float64 `db:"balance"`
 }
 
-// type UserRepository interface {
-// 	FindByEmail(ctx context.Context, email string) (User, error)
-// }
-
 type UserRepository interface {
 	FindByIdentifier(ctx context.Context, identifier string) (User, error)
 	Create(ctx context.Context, user User) error
+	StoreRefreshToken(ctx context.Context, Id, token string, exp time.Time) error
+	DeleteRefreshToken(ctx context.Context, token string) error
+	IsRefreshTokenValid(ctx context.Context, token string) (bool, string, error)
 }

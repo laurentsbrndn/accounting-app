@@ -20,6 +20,18 @@ type authService struct {
 	userRepository domain.UserRepository
 }
 
+// Logout implements domain.AuthService.
+func (a authService) Logout(ctx context.Context, req dto.LogoutRequest) (dto.LogoutResponse, error) {
+	err := a.userRepository.DeleteRefreshToken(ctx, req.RefreshToken)
+	if err != nil {
+		return dto.LogoutResponse{}, err
+	}
+
+	return dto.LogoutResponse{
+		Message: "logout successful",
+	}, nil
+}
+
 // Register implements domain.AuthService.
 func (a authService) Register(ctx context.Context, req dto.RegisterRequest) (dto.RegisterResponse, error) {
 	userByEmail, err := a.userRepository.FindByIdentifier(ctx, req.Email)
@@ -27,7 +39,7 @@ func (a authService) Register(ctx context.Context, req dto.RegisterRequest) (dto
 		return dto.RegisterResponse{}, err
 	}
 	if userByEmail.Id != "" {
-		return dto.RegisterResponse{}, errors.New("Email already registered")
+		return dto.RegisterResponse{}, errors.New("email already registered")
 	}
 
 	userByUsername, err := a.userRepository.FindByIdentifier(ctx, req.Username)
@@ -35,12 +47,12 @@ func (a authService) Register(ctx context.Context, req dto.RegisterRequest) (dto
 		return dto.RegisterResponse{}, err
 	}
 	if userByUsername.Id != "" {
-		return dto.RegisterResponse{}, errors.New("Username already registered")
+		return dto.RegisterResponse{}, errors.New("username already registered")
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return dto.RegisterResponse{}, errors.New("Failed to hash password")
+		return dto.RegisterResponse{}, errors.New("failed to hash password")
 	}
 
 	newUser := domain.User{
@@ -53,28 +65,36 @@ func (a authService) Register(ctx context.Context, req dto.RegisterRequest) (dto
 	}
 
 	err = a.userRepository.Create(ctx, newUser)
-    if err != nil {
-        return dto.RegisterResponse{}, err
-    }
+	if err != nil {
+		return dto.RegisterResponse{}, err
+	}
 
-	claim := jwt.MapClaims{
-        "id":  newUser.Id,
-        "exp": time.Now().Add(time.Duration(a.conf.Jwt.Exp) * time.Minute).Unix(),
-    }
+	accessClaim := jwt.MapClaims{
+		"id":  newUser.Id,
+		"exp": time.Now().Add(time.Duration(a.conf.Jwt.Exp) * time.Minute).Unix(),
+	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
-    tokenStr, err := token.SignedString([]byte(a.conf.Jwt.Key))
-    if err != nil {
-        return dto.RegisterResponse{}, errors.New("failed to generate token")
-    }
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaim)
+	accessTokenStr, err := accessToken.SignedString([]byte(a.conf.Jwt.Key))
+	if err != nil {
+		return dto.RegisterResponse{}, errors.New("failed to generate access token")
+	}
+
+	refreshToken := uuid.New().String()
+	refreshExp := time.Now().Add(time.Duration(a.conf.Jwt.RefreshExp) * time.Minute)
+	err = a.userRepository.StoreRefreshToken(ctx, newUser.Id, refreshToken, refreshExp)
+	if err != nil {
+		return dto.RegisterResponse{}, err
+	}
 
 	return dto.RegisterResponse{
-        Id:          newUser.Id,
-        Email:       newUser.Email,
-        Username:    newUser.Username,
-        DisplayName: newUser.DisplayName,
-        Token:       tokenStr,
-    }, nil
+		Id:           newUser.Id,
+		Email:        newUser.Email,
+		Username:     newUser.Username,
+		DisplayName:  newUser.DisplayName,
+		AccessToken:  accessTokenStr,
+		RefreshToken: refreshToken,
+	}, nil
 }
 
 // Login implements domain.AuthService.
@@ -98,14 +118,22 @@ func (a authService) Login(ctx context.Context, req dto.LoginRequest) (dto.Login
 		"exp": time.Now().Add(time.Duration(a.conf.Jwt.Exp) * time.Minute).Unix(),
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
-	tokenStr, err := token.SignedString([]byte(a.conf.Jwt.Key))
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claim)
+	accessTokenStr, err := accessToken.SignedString([]byte(a.conf.Jwt.Key))
 	if err != nil {
 		return dto.LoginResponse{}, errors.New("authentication failed")
 	}
 
+	refreshToken := uuid.New().String()
+	refreshExp := time.Now().Add(time.Duration(a.conf.Jwt.RefreshExp) * time.Minute)
+	err = a.userRepository.StoreRefreshToken(ctx, user.Id, refreshToken, refreshExp)
+	if err != nil {
+		return dto.LoginResponse{}, err
+	}
+
 	return dto.LoginResponse{
-		Token: tokenStr,
+		AccessToken:  accessTokenStr,
+		RefreshToken: refreshToken,
 	}, nil
 }
 

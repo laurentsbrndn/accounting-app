@@ -16,6 +16,7 @@ func Get() *Config {
 	}
 
 	expInt, _ := strconv.Atoi(os.Getenv("JWT_EXP"))
+	refreshExpInt, _ := strconv.Atoi(os.Getenv("REFRESH_EXP"))
 
 	return &Config{
 		Server: Server{
@@ -33,6 +34,7 @@ func Get() *Config {
 		Jwt: Jwt{
 			Key: os.Getenv("JWT_KEY"),
 			Exp: expInt,
+			RefreshExp: refreshExpInt,
 		},
 	}
 }

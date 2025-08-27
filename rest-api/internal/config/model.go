@@ -14,6 +14,7 @@ type Server struct {
 type Jwt struct {
 	Key string
 	Exp int
+	RefreshExp int
 }
 
 type Database struct {
